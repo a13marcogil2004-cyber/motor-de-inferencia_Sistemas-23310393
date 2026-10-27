@@ -235,62 +235,319 @@ def analizar(sistema):
     print('Las variables libres pueden tomar V o F; las asignaciones mostradas satisfacen la base.')
 
 
-def iniciar():
-    s = LogicFlow()
-    while True:
-        print('\n' + '=' * 45)
-        print('       LOGICFLOW | SISTEMAS EXPERTOS')
-        print('=' * 45)
-        print('1. Agregar una regla o hecho')
-        print('2. Agregar varias reglas (una por línea)')
-        print('3. Ver átomos y base de conocimiento')
-        print('4. Construir y resolver tableau')
-        print('5. Cargar ejemplo de evaluación')
-        print('6. Borrar base de conocimiento')
-        print('7. Ayuda')
-        print('0. Salir')
+
+# ---------------------------------------------------------------------------
+# Interfaz de escritorio: Tkinter (incluido en Python)
+# ---------------------------------------------------------------------------
+import json
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from pathlib import Path
+
+FONDO = '#F2F7F4'
+OSCURO = '#103C31'
+VERDE = '#167453'
+CLARO = '#DDF2E6'
+TEXTO = '#183B32'
+GRIS = '#647D72'
+ROJO = '#AE4141'
+ARCHIVO = Path.home() / '.logicflow_base.json'
+EJEMPLO = ('Si es de día, entonces voy a trabajar\n'
+           'Si llueve, entonces no voy a trabajar\nEs de día')
+
+
+class Aplicacion(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title('LogicFlow | Motor de inferencia y tableaux semánticos')
+        self.geometry('1220x800')
+        self.minsize(900, 620)
+        self.configure(bg=FONDO)
+        self.sistema = LogicFlow()
+        self.raiz = None
+        self.terminales = []
+        self._estilos()
+        self._interfaz()
+        self._cargar()
+        self._actualizar_tablas()
+        self.protocol('WM_DELETE_WINDOW', self._cerrar)
+
+    def _estilos(self):
+        est = ttk.Style(self)
+        if 'clam' in est.theme_names():
+            est.theme_use('clam')
+        est.configure('Panel.TFrame', background='white')
+        est.configure('Main.TFrame', background=FONDO)
+        est.configure('Grid.Treeview', font=('Segoe UI', 10), rowheight=29,
+                      background='white', foreground=TEXTO, fieldbackground='white', borderwidth=0)
+        est.configure('Grid.Treeview.Heading', font=('Segoe UI', 10, 'bold'),
+                      background=CLARO, foreground=OSCURO, padding=7)
+        est.map('Grid.Treeview', background=[('selected', '#B8E7CF')], foreground=[('selected', OSCURO)])
+        est.configure('Modern.TNotebook', background=FONDO, borderwidth=0)
+        est.configure('Modern.TNotebook.Tab', padding=(17, 10), font=('Segoe UI', 10, 'bold'))
+        est.map('Modern.TNotebook.Tab', background=[('selected', 'white')], foreground=[('selected', VERDE)])
+
+    def _boton(self, padre, nombre, accion, principal=False):
+        return tk.Button(padre, text=nombre, command=accion,
+                         bg=VERDE if principal else CLARO, fg='white' if principal else OSCURO,
+                         activebackground=OSCURO if principal else '#C8EAD7',
+                         activeforeground='white' if principal else OSCURO,
+                         relief='flat', bd=0, padx=15, pady=10, cursor='hand2',
+                         font=('Segoe UI', 10, 'bold'))
+
+    def _interfaz(self):
+        cab = tk.Frame(self, bg=OSCURO, padx=26, pady=18)
+        cab.pack(fill='x')
+        tk.Label(cab, text='◈  LOGICFLOW', fg='white', bg=OSCURO,
+                 font=('Segoe UI', 23, 'bold')).pack(anchor='w')
+        tk.Label(cab, text='Motor de inferencia  /  Tableaux semánticos  /  Sistemas Expertos',
+                 fg='#ACDAC6', bg=OSCURO, font=('Segoe UI', 10)).pack(anchor='w', pady=(2, 0))
+        centro = tk.PanedWindow(self, orient='horizontal', bg=FONDO, sashwidth=8,
+                                bd=0, relief='flat')
+        centro.pack(fill='both', expand=True, padx=18, pady=(16, 7))
+        iz = tk.Frame(centro, bg='white', padx=18, pady=16)
+        de = tk.Frame(centro, bg='white', padx=14, pady=12)
+        centro.add(iz, minsize=320, width=405)
+        centro.add(de, minsize=480)
+        tk.Label(iz, text='BASE DE CONOCIMIENTO', bg='white', fg=OSCURO,
+                 font=('Segoe UI', 14, 'bold')).pack(anchor='w')
+        tk.Label(iz, text='Escribe un hecho o una regla por línea.', bg='white', fg=GRIS,
+                 font=('Segoe UI', 10)).pack(anchor='w', pady=(4, 12))
+        self.entrada = tk.Text(iz, height=7, wrap='word', bg='#F7FAF8', fg=TEXTO,
+                               font=('Segoe UI', 11), bd=1, relief='solid',
+                               highlightthickness=1, highlightbackground='#D4E8DD',
+                               insertbackground=VERDE, padx=11, pady=11)
+        self.entrada.pack(fill='x')
+        self.entrada.insert('1.0', 'Si es de día, entonces voy a trabajar\nSi llueve, entonces no voy a trabajar\nEs de día')
+        fila = tk.Frame(iz, bg='white')
+        fila.pack(fill='x', pady=(12, 8))
+        self._boton(fila, '+ Agregar reglas', self.agregar, True).pack(side='left', padx=(0, 7))
+        self._boton(fila, 'Ejemplo', self.ejemplo).pack(side='left')
+        tk.Frame(iz, bg='#E0EBE5', height=1).pack(fill='x', pady=13)
+        tk.Label(iz, text='ÁTOMOS IDENTIFICADOS', bg='white', fg=OSCURO,
+                 font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(0, 8))
+        self.tv_atomos = ttk.Treeview(iz, columns=('letra', 'significado'), show='headings',
+                                     height=5, style='Grid.Treeview')
+        self.tv_atomos.heading('letra', text='Letra')
+        self.tv_atomos.heading('significado', text='Significado')
+        self.tv_atomos.column('letra', width=60, stretch=False, anchor='center')
+        self.tv_atomos.column('significado', width=255)
+        self.tv_atomos.pack(fill='x')
+        tk.Label(iz, text='REGLAS Y FÓRMULAS', bg='white', fg=OSCURO,
+                 font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(14, 7))
+        self.tv_reglas = ttk.Treeview(iz, columns=('n', 'f'), show='headings',
+                                     height=7, style='Grid.Treeview')
+        self.tv_reglas.heading('n', text='Regla')
+        self.tv_reglas.heading('f', text='Fórmula lógica')
+        self.tv_reglas.column('n', width=63, stretch=False, anchor='center')
+        self.tv_reglas.column('f', width=252)
+        self.tv_reglas.pack(fill='both', expand=True)
+        fila2 = tk.Frame(iz, bg='white')
+        fila2.pack(fill='x', pady=(12, 0))
+        self._boton(fila2, 'Analizar árbol', self.analizar_gui, True).pack(side='left', padx=(0, 7))
+        self._boton(fila2, 'Borrar todo', self.borrar).pack(side='left')
+        self.estado = tk.StringVar(value='Listo para agregar reglas.')
+        tk.Label(iz, textvariable=self.estado, bg='white', fg=GRIS, wraplength=340,
+                 justify='left', font=('Segoe UI', 9)).pack(anchor='w', pady=(12, 0))
+
+        pestanas = ttk.Notebook(de, style='Modern.TNotebook')
+        pestanas.pack(fill='both', expand=True)
+        ar = tk.Frame(pestanas, bg='white')
+        res = tk.Frame(pestanas, bg='white')
+        pestanas.add(ar, text='Árbol semántico')
+        pestanas.add(res, text='Modelos y resultados')
+        barra = tk.Frame(ar, bg='white')
+        barra.pack(fill='x', pady=(5, 8))
+        tk.Label(barra, text='TABLEAU SEMÁNTICO', fg=OSCURO, bg='white',
+                 font=('Segoe UI', 12, 'bold')).pack(side='left')
+        self._boton(barra, 'Ajustar vista', self._centrar).pack(side='right')
+        holder = tk.Frame(ar, bg='#F8FBF9')
+        holder.pack(fill='both', expand=True)
+        self.lienzo = tk.Canvas(holder, bg='#F8FBF9', highlightthickness=0)
+        self.scroll_y = ttk.Scrollbar(holder, orient='vertical', command=self.lienzo.yview)
+        self.scroll_x = ttk.Scrollbar(holder, orient='horizontal', command=self.lienzo.xview)
+        self.lienzo.configure(yscrollcommand=self.scroll_y.set, xscrollcommand=self.scroll_x.set)
+        self.scroll_y.pack(side='right', fill='y')
+        self.scroll_x.pack(side='bottom', fill='x')
+        self.lienzo.pack(fill='both', expand=True)
+        self.lienzo.create_text(340, 160, text='Agrega reglas y pulsa «Analizar árbol»',
+                                fill=GRIS, font=('Segoe UI', 14))
+        self.resultado = tk.Text(res, bg='white', fg=TEXTO, wrap='word', bd=0,
+                                  font=('Consolas', 11), padx=16, pady=16, state='disabled')
+        self.resultado.pack(fill='both', expand=True)
+        pie = tk.Frame(self, bg=FONDO, padx=20, pady=7)
+        pie.pack(fill='x')
+        tk.Label(pie, text='Los datos se guardan automáticamente en tu computadora.', bg=FONDO,
+                 fg=GRIS, font=('Segoe UI', 9)).pack(side='left')
+        tk.Label(pie, text='∧   ∨   ¬   →   ↔', bg=FONDO, fg=VERDE,
+                 font=('Segoe UI', 12, 'bold')).pack(side='right')
+
+    def _guardar(self):
         try:
-            op = input('Opción: ').strip()
-            if op == '1':
-                f = s.agregar(input('Regla o hecho: '))
-                print(f'[OK] R{len(s.reglas)}: {fmt(f)}')
-            elif op == '2':
-                print('Escribe las reglas; deja una línea vacía para terminar:')
-                entradas = []
-                while True:
-                    linea = input('> ')
-                    if not linea.strip():
-                        break
-                    entradas.append(linea)
-                print(f'Agregadas: {s.agregar_varias(chr(10).join(entradas))}')
-            elif op == '3':
-                s.mostrar()
-            elif op == '4':
-                s.mostrar()
-                analizar(s)
-            elif op == '5':
-                s = LogicFlow()
-                s.agregar_varias('Si es de día, entonces voy a trabajar\nSi llueve, entonces no voy a trabajar\nEs de día')
-                s.mostrar()
-                analizar(s)
-            elif op == '6':
-                s = LogicFlow()
-                print('Base eliminada.')
-            elif op == '7':
-                print('Admite hechos, no, y, o, pero, si... entonces, y si y solo si.')
-                print('Ejemplo: Si es de día, entonces voy a trabajar')
-                print('Una regla por línea; ∧ precede a ∨. Usa expresiones sencillas.')
-            elif op == '0':
-                print('Hasta luego.')
-                break
+            ARCHIVO.write_text(json.dumps([s for s, _ in self.sistema.reglas],
+                                          ensure_ascii=False, indent=2), encoding='utf-8')
+        except OSError as error:
+            self.estado.set('No se pudo guardar: ' + str(error))
+
+    def _cargar(self):
+        if ARCHIVO.exists():
+            try:
+                entradas = json.loads(ARCHIVO.read_text(encoding='utf-8'))
+                for s in entradas:
+                    if isinstance(s, str):
+                        self.sistema.agregar(s)
+            except (OSError, ValueError, TypeError):
+                self.estado.set('No fue posible cargar la base anterior.')
+
+    def _actualizar_tablas(self):
+        for t in (self.tv_atomos, self.tv_reglas):
+            for x in t.get_children():
+                t.delete(x)
+        for simbolo, significado in self.sistema.atomos.values():
+            self.tv_atomos.insert('', 'end', values=(simbolo, significado))
+        for i, (_, formula) in enumerate(self.sistema.reglas, 1):
+            self.tv_reglas.insert('', 'end', values=(f'R{i}', fmt(formula)))
+
+    def agregar(self):
+        lineas = [x.strip() for x in re.split('[\n;]+', self.entrada.get('1.0', 'end')) if x.strip()]
+        if not lineas:
+            messagebox.showinfo('Sin reglas', 'Escribe al menos un hecho o regla.')
+            return
+        errores = []
+        for linea in lineas:
+            try:
+                self.sistema.agregar(linea)
+            except ValueError as error:
+                errores.append(f'{linea}: {error}')
+        self._guardar()
+        self._actualizar_tablas()
+        self.estado.set(f'{len(lineas)-len(errores)} reglas agregadas · {len(self.sistema.reglas)} en total.')
+        if errores:
+            messagebox.showwarning('Algunas reglas no se agregaron', '\n'.join(errores[:8]))
+        else:
+            self.entrada.delete('1.0', 'end')
+
+    def ejemplo(self):
+        self.entrada.delete('1.0', 'end')
+        self.entrada.insert('1.0', EJEMPLO)
+        self.estado.set('Ejemplo listo: pulsa «Agregar reglas».')
+
+    def borrar(self):
+        if not messagebox.askyesno('Confirmar', '¿Borrar todas las reglas guardadas y sus átomos?'):
+            return
+        self.sistema = LogicFlow()
+        self.raiz = None
+        self.terminales = []
+        self._guardar()
+        self._actualizar_tablas()
+        self.lienzo.delete('all')
+        self._poner_resultado('Base vacía. Agrega reglas para comenzar.')
+        self.estado.set('Base de conocimiento eliminada.')
+
+    def _poner_resultado(self, texto):
+        self.resultado.configure(state='normal')
+        self.resultado.delete('1.0', 'end')
+        self.resultado.insert('1.0', texto)
+        self.resultado.configure(state='disabled')
+
+    def analizar_gui(self):
+        if not self.sistema.reglas:
+            messagebox.showinfo('Base vacía', 'Agrega al menos una regla o hecho.')
+            return
+        try:
+            self.raiz, self.terminales = tableau([f for _, f in self.sistema.reglas])
+        except (ValueError, RuntimeError, RecursionError) as error:
+            messagebox.showerror('No se pudo analizar', str(error))
+            return
+        abiertas = [r for r in self.terminales if r.cierre.startswith('✓')]
+        cerradas = [r for r in self.terminales if r.cierre.startswith('✕')]
+        lineas = [f'BASE: {"SATISFACIBLE" if abiertas else "INSATISFACIBLE"}',
+                  '', f'Ramas abiertas: {len(abiertas)}', f'Ramas cerradas: {len(cerradas)}', '']
+        simbolos = [s for s, _ in self.sistema.atomos.values()]
+        for i, rama in enumerate(abiertas, 1):
+            v = {}
+            for f in rama.formulas:
+                if f.op == 'atom':
+                    v[f.a] = 'V'
+                elif f.op == '¬' and f.a.op == 'atom':
+                    v[f.a.a] = 'F'
+            lineas.append(f'RAMA ABIERTA {i} (nodo {rama.numero})')
+            lineas.append('   ' + ', '.join(f'{s} = {v.get(s, "libre")}' for s in simbolos))
+            lineas.append('')
+        if not abiertas:
+            lineas.append('No existe asignación que satisfaga todas las reglas.')
+        else:
+            lineas.append('«Libre» significa que puede valer V o F.')
+        lineas.extend(['', 'FÓRMULAS INICIALES:'])
+        lineas.extend(f'R{i}: {fmt(f)}' for i, (_, f) in enumerate(self.sistema.reglas, 1))
+        self._poner_resultado('\n'.join(lineas))
+        self._dibujar_arbol()
+        self.estado.set(f'Análisis completo: {len(abiertas)} abiertas, {len(cerradas)} cerradas.')
+
+    def _dibujar_arbol(self):
+        self.lienzo.delete('all')
+        raiz = self.raiz
+        if raiz is None:
+            return
+        # Asignar una columna a cada hoja; centros intermedios = promedio de hijos.
+        posiciones = {}
+        indice = [0]
+        def asignar(r, profundidad=0):
+            if not r.hijos:
+                x = indice[0] * 260 + 150
+                indice[0] += 1
             else:
-                print('Opción no válida.')
-        except (ValueError, RuntimeError) as e:
-            print('[ERROR]', e)
-        except (EOFError, KeyboardInterrupt):
-            print('\nFin.')
-            break
+                xs = [asignar(h, profundidad + 1) for h in r.hijos]
+                x = sum(xs) / len(xs)
+            posiciones[id(r)] = (x, profundidad * 160 + 90)
+            return x
+        asignar(raiz)
+        def dibujar(r):
+            x, y = posiciones[id(r)]
+            for hijo in r.hijos:
+                hx, hy = posiciones[id(hijo)]
+                self.lienzo.create_line(x, y+47, hx, hy-47, fill='#88B5A0', width=2)
+                dibujar(hijo)
+            if r.cierre.startswith('✕'):
+                relleno, borde, estado = '#FFF0ED', '#C96D65', '✕ CERRADA'
+            elif r.cierre.startswith('✓'):
+                relleno, borde, estado = '#E2F5E8', '#49A772', '✓ ABIERTA'
+            else:
+                relleno, borde, estado = 'white', '#9BC6B0', 'EXPANSIÓN'
+            w, h = 232, 100
+            self.lienzo.create_rectangle(x-w/2, y-h/2, x+w/2, y+h/2,
+                                         fill=relleno, outline=borde, width=2)
+            self.lienzo.create_text(x, y-34, text=f'NODO {r.numero}    {estado}',
+                                    font=('Segoe UI', 10, 'bold'), fill=OSCURO)
+            actuales = [fmt(f) + (' ✓' if i in r.procesadas else '')
+                        for i, f in enumerate(r.formulas)]
+            texto = ' ; '.join(actuales)
+            if len(texto) > 110:
+                texto = texto[:107] + '…'
+            self.lienzo.create_text(x, y, text=texto, width=207,
+                                    font=('Segoe UI', 9), fill=TEXTO, justify='center')
+            if r.cierre.startswith('✕'):
+                nota = r.cierre[2:]
+            else:
+                nota = r.paso.replace(' | ', ' · ')
+            if len(nota) > 55:
+                nota = nota[:52] + '…'
+            self.lienzo.create_text(x, y+37, text=nota, width=210,
+                                    font=('Segoe UI', 8), fill=ROJO if r.cierre.startswith('✕') else GRIS)
+        dibujar(raiz)
+        ancho = max(680, indice[0] * 260 + 40)
+        alto = max(y for x, y in posiciones.values()) + 110
+        self.lienzo.configure(scrollregion=(0, 0, ancho, alto))
+        self._centrar()
+
+    def _centrar(self):
+        self.lienzo.xview_moveto(0)
+        self.lienzo.yview_moveto(0)
+
+    def _cerrar(self):
+        self._guardar()
+        self.destroy()
 
 
 if __name__ == '__main__':
-    iniciar()
+    Aplicacion().mainloop()
