@@ -260,8 +260,8 @@ class Aplicacion(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('LogicFlow | Motor de inferencia y tableaux semánticos')
-        self.geometry('1220x800')
-        self.minsize(900, 620)
+        self.geometry('1180x690')
+        self.minsize(820, 480)
         self.configure(bg=FONDO)
         self.sistema = LogicFlow()
         self.raiz = None
