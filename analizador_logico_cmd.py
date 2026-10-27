@@ -342,10 +342,7 @@ class Aplicacion(tk.Tk):
         self.tv_reglas.column('n', width=63, stretch=False, anchor='center')
         self.tv_reglas.column('f', width=252)
         self.tv_reglas.pack(fill='both', expand=True)
-        fila2 = tk.Frame(iz, bg='white')
-        fila2.pack(fill='x', pady=(12, 0))
-        self._boton(fila2, 'Analizar árbol', self.analizar_gui, True).pack(side='left', padx=(0, 7))
-        self._boton(fila2, 'Borrar todo', self.borrar).pack(side='left')
+        
         self.estado = tk.StringVar(value='Listo para agregar reglas.')
         tk.Label(iz, textvariable=self.estado, bg='white', fg=GRIS, wraplength=340,
                  justify='left', font=('Segoe UI', 9)).pack(anchor='w', pady=(12, 0))
