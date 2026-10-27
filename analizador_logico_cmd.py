@@ -251,7 +251,22 @@ CLARO = '#DDF2E6'
 TEXTO = '#183B32'
 GRIS = '#647D72'
 ROJO = '#AE4141'
-ARCHIVO = Path.home() / '.logicflow_base.json'
+def carpeta_descargas():
+    """Ubica Descargas en Windows o Linux, creando la carpeta si hace falta."""
+    home = Path.home()
+    opciones = [home / 'Downloads', home / 'Descargas']
+    # En Windows, normalmente aparece en la ruta física Downloads aunque
+    # el Explorador de archivos muestre su nombre como «Descargas».
+    for carpeta in opciones:
+        if carpeta.is_dir():
+            return carpeta
+    carpeta = opciones[0] if __import__('os').name == 'nt' else opciones[1]
+    carpeta.mkdir(parents=True, exist_ok=True)
+    return carpeta
+
+
+ARCHIVO = carpeta_descargas() / 'LogicFlow_base_conocimiento.json'
+ARCHIVO_ANTERIOR = Path.home() / '.logicflow_base.json' 
 EJEMPLO = ('Si es de día, entonces voy a trabajar\n'
            'Si llueve, entonces no voy a trabajar\nEs de día')
 
@@ -278,7 +293,7 @@ class Aplicacion(tk.Tk):
             est.theme_use('clam')
         est.configure('Panel.TFrame', background='white')
         est.configure('Main.TFrame', background=FONDO)
-        est.configure('Grid.Treeview', font=('Segoe UI', 10), rowheight=29,
+        est.configure('Grid.Treeview', font=('Segoe UI', 10), rowheight=24,
                       background='white', foreground=TEXTO, fieldbackground='white', borderwidth=0)
         est.configure('Grid.Treeview.Heading', font=('Segoe UI', 10, 'bold'),
                       background=CLARO, foreground=OSCURO, padding=7)
@@ -292,60 +307,67 @@ class Aplicacion(tk.Tk):
                          bg=VERDE if principal else CLARO, fg='white' if principal else OSCURO,
                          activebackground=OSCURO if principal else '#C8EAD7',
                          activeforeground='white' if principal else OSCURO,
-                         relief='flat', bd=0, padx=15, pady=10, cursor='hand2',
+                         relief='flat', bd=0, padx=11, pady=7, cursor='hand2',
                          font=('Segoe UI', 10, 'bold'))
 
     def _interfaz(self):
-        cab = tk.Frame(self, bg=OSCURO, padx=26, pady=18)
+        cab = tk.Frame(self, bg=OSCURO, padx=22, pady=10)
         cab.pack(fill='x')
         tk.Label(cab, text='◈  LOGICFLOW', fg='white', bg=OSCURO,
-                 font=('Segoe UI', 23, 'bold')).pack(anchor='w')
+                 font=('Segoe UI', 20, 'bold')).pack(anchor='w')
         tk.Label(cab, text='Motor de inferencia  /  Tableaux semánticos  /  Sistemas Expertos',
                  fg='#ACDAC6', bg=OSCURO, font=('Segoe UI', 10)).pack(anchor='w', pady=(2, 0))
         centro = tk.PanedWindow(self, orient='horizontal', bg=FONDO, sashwidth=8,
                                 bd=0, relief='flat')
-        centro.pack(fill='both', expand=True, padx=18, pady=(16, 7))
-        iz = tk.Frame(centro, bg='white', padx=18, pady=16)
+        centro.pack(fill='both', expand=True, padx=12, pady=(9, 4))
+        iz = tk.Frame(centro, bg='white', padx=12, pady=9)
         de = tk.Frame(centro, bg='white', padx=14, pady=12)
-        centro.add(iz, minsize=320, width=405)
-        centro.add(de, minsize=480)
+        centro.add(iz, minsize=295, width=385)
+        centro.add(de, minsize=400)
+        # Controles anclados abajo: nunca quedan ocultos tras las tablas.
+        acciones = tk.Frame(iz, bg='white')
+        acciones.pack(side='bottom', fill='x', pady=(6, 0))
+        botones = tk.Frame(acciones, bg='white')
+        botones.pack(fill='x')
+        self._boton(botones, '▶ Analizar árbol', self.analizar_gui, True).pack(side='left', padx=(0, 7))
+        self._boton(botones, 'Borrar todo', self.borrar).pack(side='left')
+        self._boton(acciones, '💾 Guardar en Descargas', self.guardar_manual).pack(anchor='w', pady=(5, 0))
+        self.estado = tk.StringVar(value='Listo para agregar reglas.')
+        tk.Label(acciones, textvariable=self.estado, bg='white', fg=GRIS, wraplength=340,
+                 justify='left', font=('Segoe UI', 9)).pack(anchor='w', pady=(5, 0))
         tk.Label(iz, text='BASE DE CONOCIMIENTO', bg='white', fg=OSCURO,
                  font=('Segoe UI', 14, 'bold')).pack(anchor='w')
         tk.Label(iz, text='Escribe un hecho o una regla por línea.', bg='white', fg=GRIS,
-                 font=('Segoe UI', 10)).pack(anchor='w', pady=(4, 12))
-        self.entrada = tk.Text(iz, height=7, wrap='word', bg='#F7FAF8', fg=TEXTO,
+                 font=('Segoe UI', 10)).pack(anchor='w', pady=(2, 6))
+        self.entrada = tk.Text(iz, height=5, wrap='word', bg='#F7FAF8', fg=TEXTO,
                                font=('Segoe UI', 11), bd=1, relief='solid',
                                highlightthickness=1, highlightbackground='#D4E8DD',
                                insertbackground=VERDE, padx=11, pady=11)
         self.entrada.pack(fill='x')
         self.entrada.insert('1.0', 'Si es de día, entonces voy a trabajar\nSi llueve, entonces no voy a trabajar\nEs de día')
         fila = tk.Frame(iz, bg='white')
-        fila.pack(fill='x', pady=(12, 8))
+        fila.pack(fill='x', pady=(7, 4))
         self._boton(fila, '+ Agregar reglas', self.agregar, True).pack(side='left', padx=(0, 7))
         self._boton(fila, 'Ejemplo', self.ejemplo).pack(side='left')
-        tk.Frame(iz, bg='#E0EBE5', height=1).pack(fill='x', pady=13)
+        tk.Frame(iz, bg='#E0EBE5', height=1).pack(fill='x', pady=6)
         tk.Label(iz, text='ÁTOMOS IDENTIFICADOS', bg='white', fg=OSCURO,
                  font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(0, 8))
         self.tv_atomos = ttk.Treeview(iz, columns=('letra', 'significado'), show='headings',
-                                     height=5, style='Grid.Treeview')
+                                     height=3, style='Grid.Treeview')
         self.tv_atomos.heading('letra', text='Letra')
         self.tv_atomos.heading('significado', text='Significado')
         self.tv_atomos.column('letra', width=60, stretch=False, anchor='center')
         self.tv_atomos.column('significado', width=255)
         self.tv_atomos.pack(fill='x')
         tk.Label(iz, text='REGLAS Y FÓRMULAS', bg='white', fg=OSCURO,
-                 font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(14, 7))
+                 font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(8, 4))
         self.tv_reglas = ttk.Treeview(iz, columns=('n', 'f'), show='headings',
-                                     height=7, style='Grid.Treeview')
+                                     height=3, style='Grid.Treeview')
         self.tv_reglas.heading('n', text='Regla')
         self.tv_reglas.heading('f', text='Fórmula lógica')
         self.tv_reglas.column('n', width=63, stretch=False, anchor='center')
         self.tv_reglas.column('f', width=252)
         self.tv_reglas.pack(fill='both', expand=True)
-        
-        self.estado = tk.StringVar(value='Listo para agregar reglas.')
-        tk.Label(iz, textvariable=self.estado, bg='white', fg=GRIS, wraplength=340,
-                 justify='left', font=('Segoe UI', 9)).pack(anchor='w', pady=(12, 0))
 
         pestanas = ttk.Notebook(de, style='Modern.TNotebook')
         pestanas.pack(fill='both', expand=True)
@@ -374,27 +396,52 @@ class Aplicacion(tk.Tk):
         self.resultado.pack(fill='both', expand=True)
         pie = tk.Frame(self, bg=FONDO, padx=20, pady=7)
         pie.pack(fill='x')
-        tk.Label(pie, text='Los datos se guardan automáticamente en tu computadora.', bg=FONDO,
+        tk.Label(pie, text='Guardado automático: Descargas / LogicFlow_base_conocimiento.json', bg=FONDO,
                  fg=GRIS, font=('Segoe UI', 9)).pack(side='left')
         tk.Label(pie, text='∧   ∨   ¬   →   ↔', bg=FONDO, fg=VERDE,
                  font=('Segoe UI', 12, 'bold')).pack(side='right')
 
     def _guardar(self):
         try:
-            ARCHIVO.write_text(json.dumps([s for s, _ in self.sistema.reglas],
-                                          ensure_ascii=False, indent=2), encoding='utf-8')
+            ARCHIVO.parent.mkdir(parents=True, exist_ok=True)
+            datos = {
+                'formato': 'LogicFlow 1.0',
+                'reglas': [s for s, _ in self.sistema.reglas],
+                'atomos': [{'letra': letra, 'significado': frase}
+                           for letra, frase in self.sistema.atomos.values()]
+            }
+            ARCHIVO.write_text(json.dumps(datos, ensure_ascii=False, indent=2),
+                               encoding='utf-8')
+            return True
         except OSError as error:
             self.estado.set('No se pudo guardar: ' + str(error))
+            return False
+
+    def guardar_manual(self):
+        if self._guardar():
+            messagebox.showinfo('Guardado correctamente',
+                                'Tu base de conocimiento se guardó en:\n' + str(ARCHIVO))
+        else:
+            messagebox.showerror('Error', 'No fue posible guardar el archivo en Descargas.')
 
     def _cargar(self):
-        if ARCHIVO.exists():
-            try:
-                entradas = json.loads(ARCHIVO.read_text(encoding='utf-8'))
-                for s in entradas:
-                    if isinstance(s, str):
-                        self.sistema.agregar(s)
-            except (OSError, ValueError, TypeError):
-                self.estado.set('No fue posible cargar la base anterior.')
+        # Recupera también las bases guardadas por versiones anteriores.
+        origen = ARCHIVO if ARCHIVO.exists() else ARCHIVO_ANTERIOR
+        if not origen.exists():
+            return
+        try:
+            datos = json.loads(origen.read_text(encoding='utf-8'))
+            entradas = datos.get('reglas', []) if isinstance(datos, dict) else datos
+            if not isinstance(entradas, list):
+                raise ValueError('El archivo no contiene una lista de reglas.')
+            for linea in entradas:
+                if isinstance(linea, str):
+                    self.sistema.agregar(linea)
+            if origen == ARCHIVO_ANTERIOR:
+                self._guardar()  # migración automática a Descargas
+            self.estado.set(f'Se cargaron {len(self.sistema.reglas)} reglas desde Descargas.')
+        except (OSError, ValueError, TypeError) as error:
+            self.estado.set('No fue posible cargar la base anterior: ' + str(error))
 
     def _actualizar_tablas(self):
         for t in (self.tv_atomos, self.tv_reglas):
